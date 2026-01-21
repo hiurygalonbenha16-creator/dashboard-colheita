@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Colheita Soja 25/26 - Grupo Jacó Agro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { background-color: #f1f5f9; font-family: 'Inter', sans-serif; padding: 30px; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
+        .chart-container { position: relative; height: 180px; width: 180px; margin: 0 auto; }
+        .label-header { font-size: 12px; font-weight: 800; color: #64748b; letter-spacing: 0.05em; }
+        
+        #modal { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 50; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .modal-content { background: white; width: 95%; max-width: 1000px; max-height: 90vh; overflow-y: auto; border-radius: 16px; position: relative; }
+        
+        thead { position: sticky; top: 0; background: #f8fafc; z-index: 10; }
+        .search-input { width: 100%; padding: 10px 15px; border: 2px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; outline: none; transition: border-color 0.2s; }
+        .search-input:focus { border-color: #3b82f6; }
+    </style>
+</head>
+<body>
+
+    <div id="modal" onclick="closeModal()">
+        <div class="modal-content p-8 shadow-2xl" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 border-b pb-4">
+                <div>
+                    <h2 id="modalTitle" class="text-2xl font-extrabold text-slate-800">Fazenda</h2>
+                    <p class="text-sm font-bold text-slate-400 uppercase tracking-widest">Detalhamento de Colheita</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 text-3xl font-bold">&times;</button>
+            </div>
+
+            <input type="text" id="searchInput" class="search-input" placeholder="🔍 Pesquisar por talhão, fazenda ou variedade..." onkeyup="filterTable()">
+            
+            <div class="overflow-hidden rounded-lg border border-slate-200">
+                <table class="min-w-full divide-y divide-slate-200" id="mainTable">
+                    <thead class="bg-slate-50">
+                        <tr id="tableHeader">
+                            </tr>
+                    </thead>
+                    <tbody id="talhoesTable" class="bg-white divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-6 mb-8 flex justify-between items-center border-l-8 border-orange-500">
+        <div>
+            <h1 class="text-2xl font-extrabold text-slate-800 uppercase tracking-tight">Controle de Colheita Soja 25/26</h1>
+            <p class="text-sm font-semibold text-slate-400">Grupo Jacó Agro</p>
+        </div>
+        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-right">
+            <p class="label-header">ÁREA TOTAL: <span class="text-slate-900 text-lg">26.888 ha</span></p>
+            <p class="label-header text-orange-600">COLHIDO: <span class="text-lg">7.033 ha</span></p>
+        </div>
+    </div>
+
+    <div class="card p-8 mb-10">
+        <h2 class="label-header mb-6 uppercase">Média de Produtividade (SC/HA)</h2>
+        <div style="height: 550px;">
+            <canvas id="rankingChart"></canvas>
+        </div>
+    </div>
+
+    <div id="farmGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-8"></div>
+
+    <script>
+        const fazendas = [
+            { n: "RESUMO DO GRUPO", p: 21.4, sc: 58.19, col: 7033, tot: 26888, destaque: true },
+            { n: "CHAPADA", p: 100.0, sc: 73.15, col: 928, tot: 928 },
+            { n: "PARECIS", p: 46.1, sc: 66.30, col: 290, tot: 629 },
+            { n: "VANESSINHA", p: 100.0, sc: 52.28, col: 422, tot: 422 },
+            { n: "RAMADA", p: 100.0, sc: 60.68, col: 750, tot: 750 },
+            { n: "MARIMBONDO", p: 12.5, sc: 63.69, col: 140, tot: 1114 },
+            { n: "SAO GABRIEL 2", p: 19.2, sc: 56.72, col: 3417, tot: 17837 },
+            { n: "ESTANCIA", p: 81.5, sc: 44.46, col: 678, tot: 832 },
+            { n: "ACAIA", p: 0.0, sc: 0, col: 0, tot: 1724 },
+            { n: "SEVANI", p: 0.0, sc: 0, col: 0, tot: 605 },
+            { n: "SOLEDADE", p: 0.0, sc: 0, col: 0, tot: 200 },
+            { n: "VANESSA", p: 0.0, sc: 0, col: 0, tot: 568 },
+            { n: "GAUCHA", p: 0.0, sc: 0, col: 0, tot: 686 },
+            { n: "SANTA LUZIA", p: 0.0, sc: 0, col: 0, tot: 777 },
+            { n: "SAO ROQUE", p: 0.0, sc: 0, col: 0, tot: 380 },
+            { n: "ESTRELA DO SUL", p: 0.0, sc: 0, col: 0, tot: 898 }
+        ];
+
+        const talhoes = [
+            // ACAIA
+            { f: "ACAIA", t: "AC-01", v: "DM-68i69", a: 350, sc: null },
+            { f: "ACAIA", t: "AC-02", v: "DM-68i69", a: 348, sc: null },
+            { f: "ACAIA", t: "AC-03", v: "MOGI", a: 266, sc: null },
+            { f: "ACAIA", t: "AC-04", v: "MOGI", a: 266, sc: null },
+            { f: "ACAIA", t: "AC-05", v: "ATAQUE", a: 318, sc: null },
+            { f: "ACAIA", t: "AC-06", v: "ATAQUE", a: 138, sc: null },
+            { f: "ACAIA", t: "AC-07", v: "ATAQUE", a: 38, sc: null },
+            // SEVANI
+            { f: "SEVANI", t: "SE-01", v: "DM-68i69", a: 244, sc: null },
+            { f: "SEVANI", t: "SE-02", v: "DM-68i69", a: 244, sc: null },
+            { f: "SEVANI", t: "SE-03", v: "ATAQUE", a: 117, sc: null },
+            // ESTANCIA
+            { f: "ESTANCIA", t: "EG-01", v: "M-6620 I2X", a: 255, sc: 42.41 },
+            { f: "ESTANCIA", t: "EG-02", v: "M-6620 I2X", a: 235, sc: 37.95 },
+            { f: "ESTANCIA", t: "EG-03", v: "M-6620 I2X", a: 188, sc: 55.38 },
+            { f: "ESTANCIA", t: "EG-04", v: "OLIMPO", a: 154, sc: null },
+            // PARECIS
+            { f: "PARECIS", t: "PA-01", v: "M-6620 I2X", a: 290, sc: 66.30 },
+            { f: "PARECIS", t: "PA-02", v: "M-6620 I2X", a: 193, sc: null },
+            { f: "PARECIS", t: "PA-04", v: "M-6620 I2X", a: 146, sc: 62.91 },
+            // RAMADA
+            { f: "RAMADA", t: "RA-01", v: "OLIMPO", a: 151, sc: 54.89 },
+            { f: "RAMADA", t: "RA-02", v: "M-6620 I2X", a: 185, sc: 59.32 },
+            { f: "RAMADA", t: "RA-03", v: "M-6620 I2X", a: 151, sc: 64.91 },
+            { f: "RAMADA", t: "RA-04", v: "M-6620 I2X", a: 148, sc: 67.83 },
+            { f: "RAMADA", t: "RA-05", v: "M-6620 I2X", a: 53, sc: 48.81 },
+            { f: "RAMADA", t: "RA-06", v: "M-6620 I2X", a: 62, sc: 61.57 },
+            // SOLEDADE
+            { f: "SOLEDADE", t: "SO-09", v: "TMG-22x77", a: 132, sc: null },
+            { f: "SOLEDADE", t: "SO-10", v: "TMG-22x77", a: 68, sc: null },
+            // VANESSA
+            { f: "VANESSA", t: "VA-02", v: "OLIMPO", a: 100, sc: null },
+            { f: "VANESSA", t: "VA-02", v: "DM-75i74", a: 62, sc: null },
+            { f: "VANESSA", t: "VA-03", v: "DM-75i74", a: 188, sc: null },
+            { f: "VANESSA", t: "VA-04", v: "DM-75i74", a: 98, sc: null },
+            { f: "VANESSA", t: "VA-05", v: "ATAQUE", a: 308, sc: null },
+            // VANESSINHA
+            { f: "VANESSINHA", t: "VH-01", v: "DM-68i69", a: 87, sc: 62.56 },
+            { f: "VANESSINHA", t: "VH-02", v: "DM-68i69", a: 94, sc: 67.92 },
+            { f: "VANESSINHA", t: "VH-03", v: "DM-68i69", a: 96, sc: 48.11 },
+            { f: "VANESSINHA", t: "VH-04", v: "DM-68i69", a: 96, sc: 33.81 },
+            { f: "VANESSINHA", t: "VH-05", v: "OLIMPO", a: 49, sc: 48.35 },
+            // CHAPADA
+            { f: "CHAPADA", t: "CH-21", v: "DM-75i74", a: 225, sc: 69.59 },
+            { f: "CHAPADA", t: "CH-22", v: "DM-75i74", a: 202, sc: 73.63 },
+            { f: "CHAPADA", t: "CH-27", v: "DM-75i74", a: 200, sc: 73.76 },
+            { f: "CHAPADA", t: "CH-28", v: "DM-75i74", a: 76, sc: 80.75 },
+            { f: "CHAPADA", t: "CH-30", v: "DM-75i74", a: 225, sc: 67.25 },
+            // GAUCHA
+            { f: "GAUCHA", t: "GA-01", v: "M-6601", a: 183, sc: null },
+            { f: "GAUCHA", t: "GA-02", v: "M-6601", a: 165, sc: null },
+            { f: "GAUCHA", t: "GA-03", v: "M-6601", a: 145, sc: null },
+            { f: "GAUCHA", t: "GA-04", v: "79KA72", a: 135, sc: null },
+            { f: "GAUCHA", t: "GA-07", v: "M-6601", a: 58, sc: null },
+            // MARIMBONDO
+            { f: "MARIMBONDO", t: "MA-01", v: "DM-75i74", a: 140, sc: 60.71 },
+            { f: "MARIMBONDO", t: "MA-02", v: "DM-75i74", a: 90, sc: 60.35 },
+            { f: "MARIMBONDO", t: "MA-03", v: "DM-75i74", a: 172, sc: 67.17 },
+            { f: "MARIMBONDO", t: "MA-04", v: "TMG-2379", a: 134, sc: null },
+            { f: "MARIMBONDO", t: "MA-05", v: "TMG-2379", a: 175, sc: null },
+            { f: "MARIMBONDO", t: "MA-07", v: "TMG-2379", a: 80, sc: null },
+            { f: "MARIMBONDO", t: "MA-07 B", v: "TMG-2379", a: 145, sc: null },
+            { f: "MARIMBONDO", t: "MA-20", v: "TMG-2379", a: 48, sc: null },
+            { f: "MARIMBONDO", t: "MA-70", v: "TMG-2379", a: 130, sc: null },
+            // SANTA LUZIA
+            { f: "SANTA LUZIA", t: "SL-11", v: "OLIMPO", a: 237, sc: null },
+            { f: "SANTA LUZIA", t: "SL-15", v: "TMG-22x77", a: 53, sc: null },
+            { f: "SANTA LUZIA", t: "SL-17", v: "TMG-22x77", a: 104, sc: null },
+            { f: "SANTA LUZIA", t: "SL-19", v: "OLIMPO", a: 91, sc: null },
+            { f: "SANTA LUZIA", t: "SL-23", v: "OLIMPO", a: 154, sc: null },
+            { f: "SANTA LUZIA", t: "SL-23", v: "78KA42", a: 138, sc: null },
+            // SAO ROQUE
+            { f: "SAO ROQUE", t: "SR-45", v: "84KA92", a: 50, sc: null },
+            { f: "SAO ROQUE", t: "SR-50", v: "OLIMPO", a: 200, sc: null },
+            { f: "SAO ROQUE", t: "SR-58", v: "M-8644", a: 130, sc: null },
+            // ESTRELA DO SUL
+            { f: "ESTRELA DO SUL", t: "ES-62", v: "M-8866", a: 124, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-62", v: "BRS-284", a: 89, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-64", v: "M-8866", a: 30, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-64", v: "BRS-284", a: 75, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-73", v: "BRS-284", a: 81, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-74", v: "BRS-284", a: 56, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-74", v: "M-8644", a: 67, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-82", v: "M-8644", a: 287, sc: null },
+            { f: "ESTRELA DO SUL", t: "ES-84", v: "M-8644", a: 89, sc: null },
+            // SAO GABRIEL 2
+            { f: "SAO GABRIEL 2", t: "SG-03", v: "M-6620 I2X", a: 300, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-04", v: "M-6620 I2X", a: 326, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-05", v: "M-6620 I2X", a: 308, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-06", v: "M-6620 I2X", a: 100, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-07", v: "M-6620 I2X", a: 109, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-08", v: "OLIMPO", a: 165, sc: 62.92 },
+            { f: "SAO GABRIEL 2", t: "SG-11 A", v: "MOGI", a: 172, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-11 B", v: "DM-75i74", a: 125, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-16", v: "MOGI", a: 139, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-17", v: "MOGI", a: 243, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-21", v: "MOGI", a: 232, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-22 A", v: "MOGI", a: 160, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-22 B", v: "76KA72", a: 118, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-25", v: "MOGI", a: 81, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-26", v: "DM-68i69", a: 301, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-28", v: "DM-68i69", a: 284, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-29", v: "DM-68i69", a: 300, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-30", v: "M-6620 I2X", a: 297, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-32", v: "OLIMPO", a: 195, sc: 61.26 },
+            { f: "SAO GABRIEL 2", t: "SG-34", v: "OLIMPO", a: 125, sc: 32.12 },
+            { f: "SAO GABRIEL 2", t: "SG-38", v: "M-6620 I2X", a: 118, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-39", v: "M-6620 I2X", a: 212, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-40", v: "M-6620 I2X", a: 312, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-42", v: "M-6620 I2X", a: 403, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-44", v: "M-6620 I2X", a: 244, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-50", v: "MOGI", a: 175, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-52", v: "OLIMPO", a: 392, sc: 71.69 },
+            { f: "SAO GABRIEL 2", t: "SG-60", v: "ATAQUE", a: 236, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-62", v: "ÍMPETO I2X", a: 392, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-66 A", v: "OLIMPO", a: 186, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-66 B", v: "OLIMPO", a: 180, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-69", v: "ATAQUE", a: 263, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-70", v: "ATAQUE", a: 272, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-72", v: "ÍMPETO I2X", a: 394, sc: null },
+            { f: "SAO GABRIEL 2", t: "SG-310", v: "M-6620 I2X", a: 283, sc: 52.36 },
+            { f: "SAO GABRIEL 2", t: "SG-311", v: "DM-75i74", a: 109, sc: 53.05 },
+            { f: "SAO GABRIEL 2", t: "SG-312", v: "DM-75i74", a: 183, sc: 63.50 },
+            { f: "SAO GABRIEL 2", t: "SG-314", v: "DM-75i74", a: 71, sc: 51.31 },
+            { f: "SAO GABRIEL 2", t: "SG-320", v: "M-6620 I2X", a: 241, sc: 41.15 },
+            { f: "SAO GABRIEL 2", t: "SG-322", v: "DM-75i74", a: 130, sc: 64.49 },
+            { f: "SAO GABRIEL 2", t: "SG-324", v: "DM-75i74", a: 161, sc: 64.79 },
+            { f: "SAO GABRIEL 2", t: "SG-326", v: "DM-75i74", a: 159, sc: 56.65 },
+            { f: "SAO GABRIEL 2", t: "SG-330", v: "DM-75i74", a: 56, sc: 69.38 },
+            { f: "SAO GABRIEL 2", t: "SG-332", v: "DM-75i74", a: 215, sc: 66.55 },
+            { f: "SAO GABRIEL 2", t: "SG-333", v: "DM-75i74", a: 174, sc: 52.42 },
+            { f: "SAO GABRIEL 2", t: "SG-334", v: "DM-75i74", a: 153, sc: 54.52 },
+            { f: "SAO GABRIEL 2", t: "SG-380", v: "DM-68i69", a: 226, sc: 44.47 },
+            { f: "SAO GABRIEL 2", t: "SG-381", v: "DM-68i69", a: 198, sc: 53.72 },
+            { f: "SAO GABRIEL 2", t: "SG-391", v: "M-6620 I2X", a: 181, sc: 52.01 }
+        ];
+
+        function filterTable() {
+            const input = document.getElementById('searchInput');
+            const filter = input.value.toUpperCase();
+            const tr = document.getElementById('talhoesTable').getElementsByTagName('tr');
+
+            for (let i = 0; i < tr.length; i++) {
+                const text = tr[i].textContent || tr[i].innerText;
+                tr[i].style.display = text.toUpperCase().indexOf(filter) > -1 ? "" : "none";
+            }
+        }
+
+        function openModal(nomeFazenda) {
+            const modal = document.getElementById('modal');
+            const tableBody = document.getElementById('talhoesTable');
+            const header = document.getElementById('tableHeader');
+            const searchInput = document.getElementById('searchInput');
+            
+            searchInput.value = ''; // Limpa busca
+            document.getElementById('modalTitle').innerText = nomeFazenda;
+            tableBody.innerHTML = '';
+
+            let filtrados;
+            let mostrarFazenda = false;
+
+            if (nomeFazenda === "RESUMO DO GRUPO") {
+                filtrados = talhoes; // Todos os talhões
+                mostrarFazenda = true;
+            } else {
+                filtrados = talhoes.filter(t => t.f.toUpperCase() === nomeFazenda.toUpperCase());
+            }
+
+            // Define o cabeçalho
+            header.innerHTML = `
+                ${mostrarFazenda ? '<th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Fazenda</th>' : ''}
+                <th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Talhão</th>
+                <th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Variedade</th>
+                <th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Área</th>
+                <th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Status / Prod.</th>
+            `;
+
+            if (filtrados.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400 font-medium">Nenhum dado encontrado.</td></tr>`;
+            } else {
+                filtrados.forEach(t => {
+                    const status = t.sc !== null 
+                        ? `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-black">${t.sc.toFixed(2)} SC/HA</span>`
+                        : `<span class="bg-slate-100 text-slate-500 px-2 py-1 rounded text-[10px] font-black italic uppercase tracking-tighter">Falta Colher</span>`;
+                    
+                    tableBody.innerHTML += `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            ${mostrarFazenda ? `<td class="px-4 py-3 text-[11px] font-bold text-blue-600">${t.f}</td>` : ''}
+                            <td class="px-4 py-3 text-sm font-bold text-slate-700">${t.t}</td>
+                            <td class="px-4 py-3 text-sm text-slate-600">${t.v}</td>
+                            <td class="px-4 py-3 text-sm text-slate-600">${t.a} ha</td>
+                            <td class="px-4 py-3 text-sm">${status}</td>
+                        </tr>
+                    `;
+                });
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+        // Renderização dos cards
+        const grid = document.getElementById('farmGrid');
+        fazendas.forEach((f, i) => {
+            grid.innerHTML += `
+                <div onclick="openModal('${f.n}')" class="card p-8 flex flex-col justify-between transition-all hover:shadow-xl cursor-pointer active:scale-95 ${f.destaque ? 'ring-4 ring-blue-500 border-transparent' : 'hover:border-blue-300'}">
+                    <h3 class="text-sm font-extrabold text-slate-700 text-center mb-6 tracking-widest uppercase">${f.n}</h3>
+                    <div class="flex justify-center gap-6 mb-6">
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-yellow-400"></div><span class="text-[10px] font-bold text-slate-400 uppercase">Colhido</span></div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-green-800"></div><span class="text-[10px] font-bold text-slate-400 uppercase">Falta Colher</span></div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="c-${i}"></canvas>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-3xl font-black text-slate-800">${f.p}%</span>
+                            <span class="text-xs font-bold text-slate-500">${f.sc} sc/ha</span>
+                        </div>
+                    </div>
+                    <div class="mt-8 pt-6 border-t border-slate-100">
+                        <p class="text-xs font-black text-slate-400 text-center uppercase tracking-tighter">
+                            ${f.col.toLocaleString('pt-BR')} ha colhidos de ${f.tot.toLocaleString('pt-BR')} ha
+                        </p>
+                    </div>
+                </div>
+            `;
+        });
+
+        // Gráfico Ranking
+        const rankingData = fazendas.filter(f => !f.destaque).sort((a,b) => b.sc - a.sc);
+        new Chart(document.getElementById('rankingChart'), {
+            type: 'bar',
+            plugins: [ChartDataLabels],
+            data: {
+                labels: rankingData.map(f => f.n),
+                datasets: [{
+                    data: rankingData.map(f => f.sc),
+                    backgroundColor: '#1e293b',
+                    borderRadius: 4, barThickness: 18
+                }]
+            },
+            options: {
+                indexAxis: 'y', maintainAspectRatio: false,
+                layout: { padding: { right: 80 } },
+                plugins: { 
+                    legend: { display: false },
+                    datalabels: {
+                        anchor: 'end', align: 'right', offset: 8, color: '#1e293b',
+                        font: { weight: '800', size: 11 },
+                        formatter: (v) => v > 0 ? v.toFixed(2) + ' sc' : '0'
+                    }
+                },
+                scales: { 
+                    x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11, weight: 'bold' } }, suggestedMax: 85 },
+                    y: { grid: { display: false }, ticks: { font: { size: 11, weight: 'bold' } } }
+                }
+            }
+        });
+
+        // Gráficos Donuts
+        fazendas.forEach((f, i) => {
+            new Chart(document.getElementById(`c-${i}`), {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [f.p, 100 - f.p],
+                        backgroundColor: ['#facc15', '#166534'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '80%', plugins: { tooltip: { enabled: false } } }
+            });
+        });
+    </script>
+</body>
+</html>
